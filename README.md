@@ -1,9 +1,21 @@
 # Sheet pile project
 
+## Project requirements
+
+This project has the following components:
+
+app/Kratos_linux - Not checked into the repository. This is the Kratos linux binaries.
+inputData - Not checked into the repository. Add the input folders into the subfolders.
+src - run_kratos Python file
+workflow - Definition of the Argo workflow
+Dockerfile - Definition of Docker container
+.env - All requirements to run Kratos.
+
+## Argo workflow requirements
+
 Before submitting your Argo workflow, make sure you have the following prerequisites in place:
 
 Argo CLI: Install the Argo command-line interface (CLI) on your local machine. You can find installation instructions in the Argo documentation.
-Kubernetes Cluster: Set up a Kubernetes cluster where you plan to run your Argo workflow. Ensure that you have the necessary permissions and access to the cluster.
 Kubernetes Cluster: Set up a Kubernetes cluster where you plan to run your Argo workflow. Ensure that you have the necessary permissions and access to the cluster.
 
 ## Workflow Preparation
