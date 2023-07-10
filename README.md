@@ -5,10 +5,15 @@
 This project has the following components:
 
 app/Kratos_linux - Not checked into the repository. This is the Kratos linux binaries.
+
 inputData - Not checked into the repository. Add the input folders into the subfolders.
+
 src - run_kratos Python file
+
 workflow - Definition of the Argo workflow
+
 Dockerfile - Definition of Docker container
+
 .env - All requirements to run Kratos.
 
 ## Argo workflow requirements
