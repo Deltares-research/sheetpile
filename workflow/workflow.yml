@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: spiderweb-ensemble-
+spec:
+  entrypoint: ensembles
+  templates:
+    - name: ensembles
+      steps:
+      - - name: readmembers
+          template: read-members
+      - - name: kratos
+          template: run-kratos
+          arguments:
+            parameters:
+            - name: member
+              value: "{{item}}"
+          withParam: "{{steps.readmembers.outputs.result}}"
+
+    - name: read-members
+      script:
+        image: 093939400611.dkr.ecr.eu-west-1.amazonaws.com/boto3
+        workingDir: /data 
+        command: [python]
+        source: |
+          # generate list of memers
+          import json
+          import boto3
+          bucket = 'sheetpiles'
+          #Make sure you provide / in the end
+          prefix = 'input/'
+
+          client = boto3.client('s3')
+
+          members = []
+
+          for key in client.list_objects(Bucket=bucket, Prefix=prefix, Delimiter='/')['CommonPrefixes']:
+             members.append(key['Prefix'].split('/')[1])
+
+          print(json.dumps(members))
+
+    - name: run-kratos
+      container:
+        image: 093939400611.dkr.ecr.eu-west-1.amazonaws.com/kratos
+        command: [python, /src/run_kratos.py]
+      inputs:
+        parameters:
+          - name: member
+        artifacts:
+        - name: input
+          path: /input/{{inputs.parameters.member}}
+          s3:
+            endpoint: s3.amazonaws.com
+            bucket: sheetpiles
+            key: input/{{inputs.parameters.member}}
+            region: eu-west-1
+            accessKeySecret:
+              name: my-s3-credentials
+              key: accessKey
+            secretKeySecret:
+              name: my-s3-credentials
+              key: secretKey
+          archive:
+            none: {}
