@@ -339,7 +339,7 @@ def pick_values_from_uniform_distribution(min, max, size):
 
 if __name__ == '__main__':
     # open sqlite database and loop over the values
-    total_models = 500
+    total_models = 50
     default_value = 100
     LEFT_BOUND = -80.0
     RIGHT_BOUND = 80.0

@@ -3,4 +3,5 @@ gstools
 matplotlib
 numpy
 boto3
+plotly
 git+https://github.com/StemVibrations/STEM
