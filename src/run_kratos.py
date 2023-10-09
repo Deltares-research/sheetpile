@@ -1,76 +1,26 @@
-# This is a sample Python script.
+from shetpilegenerator.calculation import run_multistage_calculation
+from shetpilegenerator.output_utils import post_process
+import pickle
 
-import sys
-import os
-import boto3
-import psycopg2
-from psycopg2 import sql
-from dotenv import load_dotenv
-
-# point to local Kratos installation
-# sys.path.append(r"D:\Kratos_general\Kratos_build_version")
-sys.path.append(r"/app/Kratos_linux")
-
-import KratosMultiphysics as Kratos
-import KratosMultiphysics.GeoMechanicsApplication as KratosGeo
-import KratosMultiphysics.GeoMechanicsApplication.geomechanics_analysis as analysis_geo
-
-def get_nodal_variable(simulation, variable):
-
-    nodes = simulation._list_of_output_processes[0].model_part.Nodes
-    values = [node.GetSolutionStepValue(variable) for node in nodes]
-
-    return values
-
-
-def get_displacement_top_node(analysis):
-    displacements = get_nodal_variable(analysis, Kratos.DISPLACEMENT)
-    return displacements[-1][1]
-
-
-def run_one_file_and_post_result(file_path):
-    os.chdir(file_path)
-    id = int(file_path.split("_")[-1])
-    parameter_file_name = os.path.join(file_path, 'ProjectParameters.json')
-    with open(parameter_file_name, 'r') as parameter_file:
-        parameters_stage = Kratos.Parameters(parameter_file.read())
-    model = Kratos.Model()
-    analysis = analysis_geo.GeoMechanicsAnalysis(model, parameters_stage)
-    analysis.Run()
-    displacement = get_displacement_top_node(analysis)
-    print("Displacement: " + str(displacement))
-    # update database
-
-    # Connect to the database
-    conn = psycopg2.connect(
-        host=os.environ.get("HOST"),
-        dbname=os.environ.get("DBNAME"),
-        user=os.environ.get("USERNAME"),
-        password=os.environ.get("PASSWORD"),
-        port=5432
-    )
-
-    c = conn.cursor()
-    # update output in database based on directory name
-    
-    c.execute(f"UPDATE inputs_outputs SET displacement_out={displacement} WHERE id={id}")
-    conn.commit()
-    conn.close()
-
-
-# Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    load_dotenv()
-    # run all files in the run directory
-    run_directory = "/input"
-    # path_database = "D:/SITO_sheet_piles/inputs_outputs.db"
-    # list folders in run directory
-    folders_to_run = os.listdir(run_directory)
-    print(folders_to_run)
-    # loop over folders
-    for folder in folders_to_run:
-        # run test
-        run_one_file_and_post_result(os.path.join(run_directory, folder))
-
-
+    # open sqlite database and loop over the values
+    total_models = 15
+    failed_run_indexes = []
+    for id in range(1, total_models):
+        try:
+            directory = f'src/results_RF_2/{id}'
+            run_multistage_calculation(directory, 2)
+        except Exception as e:
+            print(e)
+            failed_run_indexes.append(id)
+    print(f"Failed runs: {failed_run_indexes}")
+    print(f"Failed number: {len(failed_run_indexes)}")
+    # perform the post processing
+    for id in range(1, total_models):
+        if id in failed_run_indexes:
+            continue
+        directory = f"D:/sheetpile/src/results_RF_2/{id}" 
+        # open pickle file
+        gmsh_to_kratos = pickle.load(open(f"{directory}/model.p", "rb"))
+        post_process(2, 2.0, gmsh_to_kratos, save=True, directory=directory, file_name="stage_2.png")
 

@@ -397,3 +397,4 @@ if __name__ == '__main__':
         gmsh_to_kratos = create_model(directory, input_values)
         # dump the model part to pickle
         pickle.dump(gmsh_to_kratos, open(f"{directory}/model.p", "wb"))
+    # add folder to bucket
