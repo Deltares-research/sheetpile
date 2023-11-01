@@ -17,7 +17,6 @@ class MdpaFileModify:
         # create mdpa file
         file = open(mpda_file, "a")
         file = self.write_field_processes(file, constrains_on_surfaces, model_parts_ids)
-        file = self.add_gravity(file)
         file.close()
         return
 

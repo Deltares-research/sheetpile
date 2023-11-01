@@ -55,8 +55,8 @@ def generate_jsons_for_le(sample_number, directory, stem_model):
     for counter, file in enumerate(le_files):
         mean = file["material_parameters"]["YOUNG_MODULUS"]["m"]
         std_value = file["material_parameters"]["YOUNG_MODULUS"]["s"]
-        aniso_x = 5
-        aniso_y = 2
+        aniso_x = 50
+        aniso_y = 8
         seed = sample_number + counter + 761993
         elements_pg = stem_model.body_model_parts[counter].mesh.elements
         connectivities_pg = [value.node_ids for key, value in elements_pg.items()]
@@ -69,6 +69,8 @@ def generate_jsons_for_le(sample_number, directory, stem_model):
             y = (global_nodes[int(node[0])][1] + global_nodes[int(node[1])][1] + global_nodes[int(node[2])][1]) / 3
             elements_coordinates.append([x, y])
         new_values = generate_field(mean, std_value, aniso_x, aniso_y, elements_coordinates, seed)
+        # check that the length of the values is the same as the number of elements
+        assert len(new_values) == len(elements_coordinates)
         young_modulus.append(new_values)
         dict_values = {"values": new_values}
         # write the new values in the json file
@@ -86,8 +88,8 @@ def generate_jsons_for_mc(sample_number, directory, stem_model, young_modulus):
                 {"json_names": f"{directory}/MIDDLE_mc_RF.json", "material_parameters": MATERIAL_VALUES['MIDDLE'], "physical_group": "MIDDLE", "material": MIDDLE_MC},
                 {"json_names": f"{directory}/BOTTOM_mc_RF.json", "material_parameters": MATERIAL_VALUES['BOTTOM'], "physical_group": "BOTTOM", "material": BOTTOM_MC}]
     for counter, file in enumerate(le_files):
-        aniso_x = 5
-        aniso_y = 2
+        aniso_x = 50
+        aniso_y = 8
         seed = sample_number + counter + 761993
         elements_pg = stem_model.body_model_parts[counter].mesh.elements
         connectivities_pg = [value.node_ids for key, value in elements_pg.items()]

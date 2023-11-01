@@ -6,35 +6,24 @@ from shetpilegenerator.water_pressures_modifications import define_water_boundar
 from shetpilegenerator.project_parameters_modifications import add_and_save_water_and_rfs
 from shetpilegenerator.output_utils import plot_geometry
 from shetpilegenerator.layers_definition import define_layers, define_layers_with_dike_geometry, test_define_layers_with_dike_geometry
+from shetpilegenerator.sheetpile_setup import add_line_by_coordinates, SHEETPILE_MATERIALS
 
 
 from stem.solver import AnalysisType, SolutionType, TimeIntegration, DisplacementConvergenceCriteria, \
     NewtonRaphsonStrategy, NewmarkScheme, Amgcl, StressInitialisationType, SolverSettings, Problem
 from stem.boundary import DisplacementConstraint
 from stem.load import LineLoad
-from gmsh_utils.gmsh_IO import GmshIO
 from stem.model import Model
 from stem.IO.kratos_io import KratosIO
 from stem.output import NodalOutput, GiDOutputParameters, Output, GaussPointOutput, JsonOutputParameters
+from stem.model_part import BodyModelPart
+from stem.structural_material import StructuralMaterial, EulerBeam
+from stem.additional_processes import Excavation
 import pickle
 import numpy as np
 
 
 NUMBER_OF_SAMPLES = 10  # number of samples to generate
-
-
-def define_geometry_from_gmsh(input_points, name_labels):
-    dimension = 2
-    gmsh_io = GmshIO()
-    gmsh_io.generate_geometry(input_points,
-                              "mesh_dike_2d")
-
-    physical_groups = gmsh_io.generate_extract_mesh(dimension, "mesh_dike_2d", ".", False, True)
-    geo_data = gmsh_io.geo_data
-    mesh_data = gmsh_io.mesh_data
-    mesh_data['physical_groups'] = physical_groups
-    total_dict = {'geo_data': geo_data, 'mesh_data': mesh_data}
-    return total_dict
 
 
 def get_field_process_dict(field_process):
@@ -67,6 +56,27 @@ def get_all_points(model):
         points.update(dictionary)
     return points
 
+def get_ids_from_coordinates(model, coordinates):
+    start_coordinate = coordinates[0]
+    end_coordinate = coordinates[1]
+    lines = get_all_lines(model)
+    points = get_all_points(model)
+
+    # check that x coordinates are the same
+    if start_coordinate[0] != end_coordinate[0]:
+        raise ValueError("x coordinates are not the same sheetpile is not vertical")
+    
+    line_ids = []
+    for id, line in lines.items():
+        x_coords = [points[point_id].coordinates[0] for point_id in line.point_ids]
+        y_coords = [points[point_id].coordinates[1] for point_id in line.point_ids]
+        x_coordinates_are_the_same = x_coords[0] == start_coordinate[0] and x_coords[1] == end_coordinate[0]
+        y_coordinates_are_between_0 = y_coords[0] <= start_coordinate[1] and y_coords[0] >= end_coordinate[1]
+        y_coordinates_are_between_1 = y_coords[1] <= start_coordinate[1] and y_coords[1] >= end_coordinate[1]
+        if x_coordinates_are_the_same and y_coordinates_are_between_0 and y_coordinates_are_between_1:
+            line_ids.append(id)
+    return line_ids
+
 
 def get_geometry_ids_boundaries(model, left_boundary_coord, right_boundary_coord, bottom_boundary_coord):
     # Method to get all vertical lines on the left and right boundary and horizontal lines at the bottom boundary
@@ -78,7 +88,6 @@ def get_geometry_ids_boundaries(model, left_boundary_coord, right_boundary_coord
     for id, line in lines.items():
         x_coords = [points[point_id].coordinates[0] for point_id in line.point_ids]
         y_coords = [points[point_id].coordinates[1] for point_id in line.point_ids]
-        print(id, x_coords, y_coords)
 
         if (x_coords[0] == left_boundary_coord and x_coords[1] == left_boundary_coord) or \
                 (x_coords[0] == right_boundary_coord and x_coords[1] == right_boundary_coord):
@@ -105,7 +114,7 @@ def set_up_solver(start_time, end_time):
     time_integration = TimeIntegration(start_time=start_time, end_time=end_time, delta_time=0.25, reduction_factor=1.0,
                                        increase_factor=1.0, max_delta_time_factor=1000)
     convergence_criterion = DisplacementConvergenceCriteria(displacement_relative_tolerance=1.0e-2,
-                                                            displacement_absolute_tolerance=1.0e-6)
+                                                            displacement_absolute_tolerance=1.0e-4)
     strategy_type = NewtonRaphsonStrategy(min_iterations=6, max_iterations=50, number_cycles=100)
     scheme_type = NewmarkScheme(newmark_beta=0.25, newmark_gamma=0.5, newmark_theta=0.5)
     linear_solver_settings = Amgcl(tolerance=1e-8, max_iteration=500, scaling=True)
@@ -123,20 +132,40 @@ def set_up_solver(start_time, end_time):
 
 def set_up_output_settings(nodal_results, gauss_point_results, stage_number):
     # Define the output process
-    gid_output = Output(
-        part_name="gravity",
-        output_name=f"gid_output_{stage_number}",
+    porous_media = ["TOP_1_RF",
+                    "TOP_2_RF",
+                    "TOP_3_RF",
+                    "MIDDLE_RF",
+                    "BOTTOM_RF"]
+    outputs_soils = []
+    for porous_medium in porous_media:
+        outputs_soils.append( Output(
+            part_name=porous_medium,
+            output_name=f"gid_output_{stage_number}_{porous_medium}",
+            output_dir="output",
+            output_parameters=GiDOutputParameters(
+                file_format="ascii",
+                output_interval=1,
+                nodal_results=nodal_results,
+                gauss_point_results=gauss_point_results,
+                output_control_type="step"
+            )
+        )
+        )
+    gid_output_sheetpile = Output(
+        part_name="sheetpile",
+        output_name=f"gid_output_{stage_number}_sheetpile",
         output_dir="output",
         output_parameters=GiDOutputParameters(
             file_format="ascii",
             output_interval=1,
-            nodal_results=nodal_results,
-            gauss_point_results=gauss_point_results,
+            nodal_results=[NodalOutput.DISPLACEMENT],
+            gauss_point_results=[GaussPointOutput.MOMENT, GaussPointOutput.FORCE],
             output_control_type="step"
         )
     )
     json_output = Output(
-        part_name="gravity",
+        part_name="gravity_load_2d",
         output_name=f"json_output_{stage_number}",
         output_dir="output",
         output_parameters=JsonOutputParameters(
@@ -146,7 +175,7 @@ def set_up_output_settings(nodal_results, gauss_point_results, stage_number):
         )
     )
 
-    return [gid_output, json_output]
+    return outputs_soils + [json_output, gid_output_sheetpile]
 
 
 def write_input_files(model, outputs, output_folder, mdpa_file, materials_file, project_file_name):
@@ -176,8 +205,22 @@ def write_input_files(model, outputs, output_folder, mdpa_file, materials_file, 
     )
 
 
+def set_up_sheetpile(model, line_sheetpile, sheetpile_active):
+    beam = EulerBeam(ndim=2, YOUNG_MODULUS=SHEETPILE_MATERIALS['YOUNG_MODULUS'], DENSITY=5, CROSS_AREA=1, I33=200, POISSON_RATIO=0.3)
+    material_sheetpile = StructuralMaterial(name="sheetpile", material_parameters=beam)
+    add_line_by_coordinates(model, line_sheetpile, material_sheetpile, "sheetpile")
+    excavation = Excavation(deactivate_body_model_part=not(sheetpile_active))
+    lines = get_ids_from_coordinates(model, line_sheetpile)
+    model.add_boundary_condition_by_geometry_ids(
+        ndim_boundary=1,
+        geometry_ids=lines,
+        boundary_parameters=excavation,
+        name="sheetpile_excavation"
+    )
+
+
 def set_stage(index, stage_number, start_time, end_time, project_path, constrains_on_surfaces, soils, head_level, soil_model,
-              layers, loads):
+              layers, loads, sheetpile_active, sheetpile_coordinates):
     materials_collection = write_materials_dict(soils, soil_model=soil_model)
     # create Model
     model = Model(2)
@@ -186,7 +229,6 @@ def set_stage(index, stage_number, start_time, end_time, project_path, constrain
     # define water conditions stage 1
     TOP_1_WL, TOP_2_WL, TOP_3_WL, WL2, WL3 = define_water_line_based_on_outside_head(head_level)
     dictionary_water_boundaries_stage3 = define_water_boundaries(TOP_1_WL, TOP_2_WL, TOP_3_WL, WL2, WL3)
-    load_names = []
     # add the loads
     if loads is not None:
         for load in loads:
@@ -209,6 +251,8 @@ def set_stage(index, stage_number, start_time, end_time, project_path, constrain
     # Add boundary conditions to the model (geometry ids are shown in the show_geometry)
     model.add_boundary_condition_by_geometry_ids(1, line_ids_fixed, no_displacement_parameters, "base_fixed")
     model.add_boundary_condition_by_geometry_ids(1, line_ids_roller, roller_displacement_parameters, "roller_fixed")
+    # set the sheetpile
+    set_up_sheetpile(model, sheetpile_coordinates, sheetpile_active)
     # Set mesh size and generate mesh
     # set up solver
     solver_settings = set_up_solver(start_time, end_time)
@@ -217,9 +261,11 @@ def set_stage(index, stage_number, start_time, end_time, project_path, constrain
     model.project_parameters = problem
     # set outputs
     outputs = set_up_output_settings(nodal_results=nodal_results, gauss_point_results=gauss_point_results, stage_number=stage_number)
-    model.synchronise_geometry()
+    model.post_setup()
     #model.show_geometry(show_line_ids=True, show_point_ids=True)
+    model.mesh_settings.element_size = -1
     model.generate_mesh()
+
     write_input_files(model, outputs, project_path, f"analysis_{stage_number}", f"MaterialParameters_{stage_number}.json", f"Project_Parameters_{stage_number}.json")
 
     # write the random field json files
@@ -236,7 +282,7 @@ def set_stage(index, stage_number, start_time, end_time, project_path, constrain
                                {"loads_process_list": dictionary_water_boundaries_stage3})
     # Add the field processes to the mdpa file
     modifier = MdpaFileModify(model)
-    ids_model_parts = list(range(0, len(model.body_model_parts))) + list(range(0, len(model.body_model_parts)))
+    ids_model_parts = list(range(0, len(model.body_model_parts) - 1 )) + list(range(0, len(model.body_model_parts) - 1))
     modifier.add_missing_boundaries(project_path + f"/analysis_{stage_number}.mdpa", dictionary_water_boundaries_stage3, ids_model_parts)
 
     return model
@@ -260,7 +306,7 @@ def create_model(directory, input_values):
             {"name": "BOTTOM_RF", "variable": "YOUNG_MODULUS", "function": "dummy", "function_type": "json_file",
              "dataset_file_name": "BOTTOM_le_RF.json"}],
     }
-
+    sheetpile_coordinates = [[-12, input_values['HEIGHT'], 0], [-12, 0, 0]]
     # set default loads
     # define the line load
     line_load = LineLoad(active=[True, False, False], value=[0.0, 0.0, 0.0])
@@ -288,7 +334,9 @@ def create_model(directory, input_values):
                                head_level=3.08,
                                soil_model="linear_elastic",
                                layers=layers,
-                               loads=[line_load_input])
+                               loads=[line_load_input],
+                               sheetpile_active=False,
+                               sheetpile_coordinates=sheetpile_coordinates)
 
     # make stage 2
     constrains_on_surfaces = {
@@ -326,7 +374,24 @@ def create_model(directory, input_values):
                                head_level=input_values['HEAD'],
                                soil_model="mohr_coulomb",
                                layers=layers,
-                               loads=[line_load_input])
+                               loads=[line_load_input],
+                               sheetpile_active=False,
+                               sheetpile_coordinates=sheetpile_coordinates)
+    
+    # make stage 3
+    gmsh_to_kratos = set_stage(index=input_values['INDEX'],
+                               stage_number=3,
+                               start_time=2.0,
+                               end_time=3.0,
+                               project_path=directory,
+                               constrains_on_surfaces=constrains_on_surfaces,
+                               soils=material_list,
+                               head_level=input_values['HEAD'],
+                               soil_model="mohr_coulomb",
+                               layers=layers,
+                               loads=[line_load_input],
+                               sheetpile_active=True,
+                               sheetpile_coordinates=sheetpile_coordinates)
 
     return gmsh_to_kratos
 
@@ -339,14 +404,14 @@ def pick_values_from_uniform_distribution(min, max, size):
 
 if __name__ == '__main__':
     # open sqlite database and loop over the values
-    total_models = 50
+    total_models = 1000
     default_value = 100
     LEFT_BOUND = -80.0
     RIGHT_BOUND = 80.0
     BOTTOM_BOUND = -15.0
     nodal_results = [NodalOutput.DISPLACEMENT,
                      NodalOutput.TOTAL_DISPLACEMENT,
-                     NodalOutput.WATER_PRESSURE,
+                     NodalOutput.WATER_PRESSURE
 
                      ]
     # Gauss point results
@@ -393,7 +458,7 @@ if __name__ == '__main__':
             "HEIGHT": 8.0,
             "WIDTH": 5.0,
         }
-        directory = f"results_RF_2/{id}"
+        directory = f"output/{id}"
         gmsh_to_kratos = create_model(directory, input_values)
         # dump the model part to pickle
         pickle.dump(gmsh_to_kratos, open(f"{directory}/model.p", "wb"))

@@ -13,55 +13,56 @@ import KratosMultiphysics.GeoMechanicsApplication.geomechanics_analysis as analy
 import KratosMultiphysics.GeoMechanicsApplication as KratosGeo
 
 
-def plot_RFs_set_in_last_stage(last_stage, directory):
-    # collect data
-    model_part = last_stage._list_of_output_processes[0].model_part
-    elements = model_part.Elements
+def find_local_id_node(node, x_loc, y_loc):
+    for counter, x in enumerate(x_loc):
+        if node.X == x and node.Y == y_loc[counter]:
+            return counter
+    return None
 
-    x = []
-    y = []
-    x_nodes = [Node.X for Node in model_part.Nodes]
-    y_nodes = [Node.Y for Node in model_part.Nodes]
+
+def plot_RFs_set_in_last_stage(last_stage, directory):
+    # collect model parts
+    model_parts = [output_process.model_part for output_process in last_stage._list_of_output_processes if "RF" in output_process.base_file_name ]
+    x_nodes = [Node.X for model_part in model_parts for Node in model_part.Nodes]
+    y_nodes = [Node.Y for model_part in model_parts for Node in model_part.Nodes]
     phi = []
     youngs_modulus = []
     connectivities = []
-    for element in elements:
-        values = element.CalculateOnIntegrationPoints(KratosGeo.UMAT_PARAMETERS, model_part.ProcessInfo)
-        points = element.GetIntegrationPoints()
-        nodes = element.GetNodes()
-        # create connectivity
-        connectivities.append([node.Id for node in nodes])
-        for counter, umat_vector in enumerate(values):
-            x.append(points[counter][0])
-            y.append(points[counter][1])
-            phi.append(umat_vector[3])
-            youngs_modulus.append(umat_vector[0])
-    # interpolate from the integration points to the nodes
-    x = np.array(x)
-    y = np.array(y)
+    for model_part in model_parts:
+        elements = [element for element in model_part.Elements]
+      
+
+
+        for element in elements:
+            values = element.CalculateOnIntegrationPoints(KratosGeo.UMAT_PARAMETERS, model_part.ProcessInfo)
+            nodes = element.GetNodes()
+            # create connectivity
+            connectivities.append([find_local_id_node(node, x_nodes, y_nodes) + 1 for node in nodes])
+            phi.append(values[0][3])
+            youngs_modulus.append(values[0][0])
+    
+    x = np.array(x_nodes)
+    y = np.array(y_nodes)
     phi = np.array(phi)
     youngs_modulus = np.array(youngs_modulus)
-    import scipy.interpolate as interpolate
-    phi = interpolate.griddata((x, y), phi, (x_nodes, y_nodes), method='nearest')
-    youngs_modulus = interpolate.griddata((x, y), youngs_modulus, (x_nodes, y_nodes), method='nearest')
     # normalize the values
     phi = phi / DICT_NORMALIZATION["FRICTION_ANGLE"]
     youngs_modulus = youngs_modulus / DICT_NORMALIZATION["YOUNG_MODULUS"]
 
     plot_nodal_results(
-        x_nodes,
-        y_nodes,
+        x,
+        y,
         phi,
-        np.array(connectivities),
+        connectivities,
         save=True,
         file_name="FRICTION_ANGLE.png",
         directory=directory
     )
     plot_nodal_results(
-        x_nodes,
-        y_nodes,
+        x,
+        y,
         youngs_modulus,
-        np.array(connectivities),
+        connectivities,
         save=True,
         file_name="YOUNGS_MODULUS.png",
         directory=directory
@@ -90,7 +91,7 @@ def get_stages(project_path, n_stages):
 def run_multistage_calculation(file_path, stages_number):
     cwd = os.getcwd()
     stages, model = get_stages(file_path, stages_number)
-    os.chdir('..\..')
+    os.chdir(cwd)
     plot_RFs_set_in_last_stage(stages[-1], file_path)
     model.Reset()
     return

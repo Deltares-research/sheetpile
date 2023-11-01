@@ -2,20 +2,23 @@ import os
 import numpy as np
 from shetpilegenerator.output_process import OutputProcessJsonReader
 
-def plot_nodal_results(x, y, values, connectivity, save=False, file_name="geometry.png", directory="."):
+def plot_nodal_results(x, y , values, connectivity, save=False, file_name="geometry.png", directory="."):
     # plot the results contour plot
     import matplotlib.pyplot as plt
     import matplotlib.tri as mtri
     colormap = plt.cm.get_cmap('Greys')
     sm = plt.cm.ScalarMappable(cmap=colormap)
     sm.set_clim(vmin=min(values), vmax=max(values))
-    trianges = connectivity - 1
-    triang = mtri.Triangulation(x, y, trianges)
+    
     fig1, ax1 = plt.subplots(figsize=(10, 10))
-    tcf = ax1.tricontourf(triang, values, cmap=colormap)
-    #ax1.triplot(triang, 'ko-', alpha=0)
-    # add colorbar with min and max values
-    #cbar = fig1.colorbar(sm, ax=ax1)
+    
+    # loop over the elements and plot with the fill function
+    for counter, element in enumerate(connectivity):
+        # get the coordinates of the nodes
+        x_coordinates = [x[node - 1] for node in element]
+        y_coordinates = [y[node - 1] for node in element]
+        # plot with only the boundaries shown as black lines
+        ax1.fill(x_coordinates, y_coordinates, color=colormap(values[counter]))
     # turn off the axis
     ax1.axis('off')
     if save:
@@ -30,6 +33,34 @@ def plot_nodal_results(x, y, values, connectivity, save=False, file_name="geomet
     # close all
     plt.close('all')
 
+def plot_nodal_results_with_triangulation(x, y , values, connectivity, save=False, file_name="geometry.png", directory="."):
+    # plot the results contour plot
+    import matplotlib.pyplot as plt
+    import matplotlib.tri as mtri
+    colormap = plt.cm.get_cmap('Greys')
+    sm = plt.cm.ScalarMappable(cmap=colormap)
+    sm.set_clim(vmin=min(values), vmax=max(values))
+
+    fig1, ax1 = plt.subplots(figsize=(10, 10))
+    connectivity = connectivity - 1
+    triang = mtri.Triangulation(x, y, connectivity)
+    # plot the triangulation colored by the values
+    ax1.tricontourf(triang, values, cmap=colormap)
+    ax1.axis('off')
+    if save:
+        # save the figure if the directory exists ortherwise make the directory
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        # save the figure in gray scale
+        plt.savefig(os.path.join(directory, file_name))
+    else:
+        plt.show()
+    plt.close()
+    # close all
+    plt.close('all')
+
+
+
 
 def post_process(stage_index, timestep, gmsh_to_kratos, save=False, file_name="geometry.png", directory="."):
     path_to_results = os.path.join(f"{directory}/output/json_output_{stage_index}.json")
@@ -39,20 +70,20 @@ def post_process(stage_index, timestep, gmsh_to_kratos, save=False, file_name="g
     x_coordinates = [node[0] for node in gmsh_to_kratos.gmsh_io.mesh_data['nodes'].values()]
     y_coordinates = [node[1] for node in gmsh_to_kratos.gmsh_io.mesh_data['nodes'].values()]
     connectivity = np.array(list(gmsh_to_kratos.gmsh_io.mesh_data['elements']['TRIANGLE_3N'].values()))
-    plot_nodal_results(x_coordinates,
-                       y_coordinates,
-                       water_pressure,
-                       connectivity,
-                       save=save,
-                       file_name="water_pressure_" + file_name,
-                       directory=directory)
-    plot_nodal_results(x_coordinates,
-                       y_coordinates,
-                       total_displacement,
-                       connectivity,
-                       save=save,
-                       file_name="total_displacement_" + file_name,
-                       directory=directory)
+    plot_nodal_results_with_triangulation(x_coordinates,
+                                          y_coordinates,
+                                          water_pressure,
+                                          connectivity,
+                                          save=save,
+                                          file_name="water_pressure_" + file_name,
+                                          directory=directory)
+    plot_nodal_results_with_triangulation(x_coordinates,
+                                          y_coordinates,
+                                          total_displacement,
+                                          connectivity,
+                                          save=save,
+                                          file_name="total_displacement_" + file_name,
+                                          directory=directory)
 
 
 def plot_geometry(layers, save=False, file_name="geometry.png", directory="."):

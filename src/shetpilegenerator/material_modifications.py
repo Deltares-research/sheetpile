@@ -72,7 +72,8 @@ def create_mohr_coloumb_model(values_dict):
                               )
     # Define umat constitutive law parameters
     umat_constitutive_parameters = SmallStrainUdsmLaw(UDSM_PARAMETERS=umat_parameters,
-                                                      UDSM_NAME=values_dict.get("UDSM_NAME", "D:/SheetPileGenerator/test/kratos_write_test/MohrCoulomb64.dll"),
+                                                      #UDSM_NAME=values_dict.get("UDSM_NAME", "D:/sheetpile/model/MohrCoulomb64.dll"),
+                                                      UDSM_NAME=values_dict.get("UDSM_NAME", "/model/MohrCoulomb64.so"),
                                                       UDSM_NUMBER=values_dict.get("UDSM_NUMBER", 1),
                                                       IS_FORTRAN_UDSM=True,
                                                       )

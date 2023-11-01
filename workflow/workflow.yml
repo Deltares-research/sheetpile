@@ -3,10 +3,12 @@ kind: Workflow
 metadata:
   generateName: spiderweb-ensemble-
 spec:
-  entrypoint: ensembles
+  entrypoint: merge
   templates:
     - name: ensembles
       steps:
+      - - name: generate-files
+          template: generate-files
       - - name: readmembers
           template: read-members
       - - name: kratos
@@ -16,19 +18,43 @@ spec:
             - name: member
               value: "{{item}}"
           withParam: "{{steps.readmembers.outputs.result}}"
+      - - name: merge
+          template: merge
+    
+    - name: generate-files
+      container:
+        image: 149246561375.dkr.ecr.eu-west-1.amazonaws.com/kratos
+        command: [python, /src/generate_kratos_files.py]      
+      outputs:
+        artifacts:
+        - name: output
+          path: /output
+          s3:
+            endpoint: s3.amazonaws.com
+            bucket: sheetpiles-ml
+            key: output
+            region: eu-west-1
+            accessKeySecret:
+              name: my-s3-credentials
+              key: accessKey
+            secretKeySecret:
+              name: my-s3-credentials
+              key: secretKey
+          archive:
+            none: {}      
 
     - name: read-members
       script:
-        image: 093939400611.dkr.ecr.eu-west-1.amazonaws.com/boto3
+        image: 149246561375.dkr.ecr.eu-west-1.amazonaws.com/boto3
         workingDir: /data 
         command: [python]
         source: |
           # generate list of memers
           import json
           import boto3
-          bucket = 'sheetpiles'
+          bucket = 'sheetpiles-ml'
           #Make sure you provide / in the end
-          prefix = 'input/'
+          prefix = 'output/'
 
           client = boto3.client('s3')
 
@@ -41,18 +67,18 @@ spec:
 
     - name: run-kratos
       container:
-        image: 093939400611.dkr.ecr.eu-west-1.amazonaws.com/kratos
+        image: 149246561375.dkr.ecr.eu-west-1.amazonaws.com/kratos
         command: [python, /src/run_kratos.py]
       inputs:
         parameters:
           - name: member
         artifacts:
-        - name: input
-          path: /input/{{inputs.parameters.member}}
+        - name: output
+          path: /output/{{inputs.parameters.member}}
           s3:
             endpoint: s3.amazonaws.com
-            bucket: sheetpiles
-            key: input/{{inputs.parameters.member}}
+            bucket: sheetpiles-ml
+            key: output/{{inputs.parameters.member}}
             region: eu-west-1
             accessKeySecret:
               name: my-s3-credentials
@@ -62,3 +88,58 @@ spec:
               key: secretKey
           archive:
             none: {}
+      outputs:
+        artifacts:
+        - name: output
+          path: /output
+          s3:
+            endpoint: s3.amazonaws.com
+            bucket: sheetpiles-ml
+            key: final/{{inputs.parameters.member}}
+            region: eu-west-1
+            accessKeySecret:
+              name: my-s3-credentials
+              key: accessKey
+            secretKeySecret:
+              name: my-s3-credentials
+              key: secretKey
+          archive:
+            none: {}   
+    - name: merge
+      container:
+        image: 149246561375.dkr.ecr.eu-west-1.amazonaws.com/kratos
+        command: [python, /src/preprocess.py]
+      inputs:
+        artifacts:
+        - name: final
+          path: /final
+          s3:
+            endpoint: s3.amazonaws.com
+            bucket: sheetpiles-ml
+            key: final
+            region: eu-west-1
+            accessKeySecret:
+              name: my-s3-credentials
+              key: accessKey
+            secretKeySecret:
+              name: my-s3-credentials
+              key: secretKey
+          archive:
+            none: {}
+      outputs:
+        artifacts:
+        - name: pickle
+          path: /final/ml_input
+          s3:
+            endpoint: s3.amazonaws.com
+            bucket: sheetpiles-ml
+            key: final
+            region: eu-west-1
+            accessKeySecret:
+              name: my-s3-credentials
+              key: accessKey
+            secretKeySecret:
+              name: my-s3-credentials
+              key: secretKey
+          archive:
+            none: {}      
